@@ -33,7 +33,7 @@ Features:=
 
 
 try(closeRolloutFloater fPruneDWG)catch()
-global fPruneDWG = newRolloutFloater "Prune DWG" 250 300
+global fPruneDWG = newRolloutFloater "Prune DWG" 250 370
 
 
 fn getScriptInfo s releaseInfo: "" =
@@ -119,7 +119,27 @@ fn useSettings k p w =
 
 fn validObj o = o != undefined and not isDeleted o and isValidNode o and superClassOf o == Shape
 
-
+fn freezeUi =
+(
+  	source = ""
+  	source += "using System;\n"
+  	source += "using System.Runtime.InteropServices;\n"
+  	source += "class WindowsGhosting\n"
+  	source += "{\n"
+  	source += " [DllImport(\"user32.dll\")]\n"
+  	source += " public static extern void DisableProcessWindowsGhosting();\n"
+  	source += "}\n"
+  
+  	csharpProvider = dotnetobject "Microsoft.CSharp.CSharpCodeProvider"
+  	compilerParams = dotnetobject "System.CodeDom.Compiler.CompilerParameters"
+  
+  	compilerParams.GenerateInMemory = on
+  	compilerResults = csharpProvider.CompileAssemblyFromSource compilerParams #(source)
+  
+  	assembly = compilerResults.CompiledAssembly
+  	windowsGhosting = assembly.CreateInstance "WindowsGhosting"
+  	windowsGhosting.DisableProcessWindowsGhosting()
+)
 
 rollout rPruneSettings "Options" 
 (
@@ -142,11 +162,20 @@ rollout rPruneSettings "Options"
 		checkbox _chkBox5 "Delete Empty Layers:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Removes all the layers in which there are no objects."
 		dotNetControl _lblStatus5 "System.Windows.Forms.label" width:72  align: #right 
 		
-		checkbox _chkBox6 "Attach By Color:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Attaches all dwg's depending on the color.\n\nA large number of splines is hanging scene.\nThis option will help to simplify the drawings."
+		checkbox _chkBox6 "Attach By Color:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Attaches all dwg's depending on the color.\n\nA large number of splines is hanging scene.\nThis option will help to simplify the drawings.\n\n*WARNING*:\nIf you selected more then 1000 items, this operation may take some time, chillout ;)..."
 		dotNetControl _lblStatus6 "System.Windows.Forms.label" width:72  align: #right 
 		
+		checkbox _chkBox7 "Flatten:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "This option helps make drawings flat on Z axis."
+		dotNetControl _lblStatus7 "System.Windows.Forms.label" width:72  align: #right 
 		
-		button _btnStart "Start" width:196 height:32 offset: [0, 10]
+		checkbox _chkBox8 "Rename:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Renames all selected dwg's."
+		dotNetControl _lblStatus8 "System.Windows.Forms.label" width:72  align: #right 
+		
+		checkbox _chkBox9 "Make Group:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Creates group for selected dwg's."
+		dotNetControl _lblStatus9 "System.Windows.Forms.label" width:72  align: #right 
+		
+		
+		button _btnStart "Start" width:210 height:32 offset: [0, 10]
 	)
 	
 	timer tmrPrune "" interval: 10 active: false
@@ -161,7 +190,10 @@ rollout rPruneSettings "Options"
 		"_lblStatus3",	
 		"_lblStatus4",	
 		"_lblStatus5",	
-		"_lblStatus6"	
+		"_lblStatus6",	
+		"_lblStatus7",	
+		"_lblStatus8",
+		"_lblStatus9"	
 	)
 	
 	global iWindowPos = [0,0]	
@@ -172,6 +204,7 @@ rollout rPruneSettings "Options"
 	global _EXIST = "EXIST"
 	global _WAIT = "WAIT..."
 	global _CLEARED = "CLEARED"
+	global _CANCEL = "CANCEL"
 	
 	fn saveWindowPos =
 	(
@@ -264,10 +297,16 @@ rollout rPruneSettings "Options"
 				fgColor = getColor 153 0 0
 				txt = _NOTFOUND
 			)
+			#cancel:
+			(
+				bgColor = getColor 224 102 102
+				fgColor = getColor 153 0 0
+				txt = _CANCEL
+			)
 			#exist:
 			(
-				bgColor = getColor 147 196 125
-				fgColor = getColor 56 118 79
+				bgColor = getColor 255 229 153
+				fgColor = getColor 215 144 0
 				txt = _EXIST
 			)
 			#ok:
@@ -358,25 +397,28 @@ rollout rPruneSettings "Options"
 		m = "Attach By R:" + r + " G:" +g + " B:" + b
 		progressStart m
 		escapeEnable
+		
+		pause = 0
 
 		disableSceneRedraw()
 		undo off
 		(
 			for i in x.count to 2 by -1 do
 			(
-				addAndWeld o x[i] -1	
+				try(addAndWeld o x[i] -1) catch()
 				
 				deleteItem x i
 				
 				result += 1
+				pause += 1
 				
 				progressUpdate (100.0 * result / x.count)
 				if(getProgressCancel() == true) do exit		
 				
-				/*if(result > 300) do 
+				/*if(pause > 300) do 
 				(
-					--tmrAttachNode.active = false
-					exit
+					sleep 0.1
+					pause = 0
 				)*/
 			)
 		)
@@ -385,7 +427,7 @@ rollout rPruneSettings "Options"
 		progressEnd()
 		
 		o.wirecolor = c
-		CenterPivot o
+		o.pivot = o.center
 		updateShape o
 		
 		enableSceneRedraw()	
@@ -395,10 +437,6 @@ rollout rPruneSettings "Options"
 		return result
 	)
 	
-	on tmrAttachNode tick do
-	(				
-		
-	)
 	
 	fn attachByColor o =
 	(
@@ -455,20 +493,16 @@ rollout rPruneSettings "Options"
 		
 		n = _tbTextBox.text
 		
-		for i in 1 to o.count  do
+		for i in 1 to o.count  where validObj o[i] do
 		(
-			if(validObj o[i]) do
-			(
-				o[i].colorbylayer = false
-				o[i].name = uniqueName (n + "_")	
+			o[i].colorbylayer = false
 				
-				case of
-				(
-					(o[i].layer.wirecolor != white /*and o[i].layer.name != "0"*/ and o[i].layer.name != n) : o[i].wirecolor = o[i].layer.wirecolor 
-					(o[i].wirecolor != white): o[i].wirecolor = o[i].wirecolor
-					default: o[i].wirecolor = green
-				)							
-			)
+			case of
+			(
+				(o[i].layer.wirecolor != white /*and o[i].layer.name != "0"*/ and o[i].layer.name[1] != "[") : o[i].wirecolor = o[i].layer.wirecolor 
+				(o[i].wirecolor != white): o[i].wirecolor = o[i].wirecolor
+				default: o[i].wirecolor = green
+			)										
 		)
 	)
 	
@@ -483,7 +517,7 @@ rollout rPruneSettings "Options"
 				
 		lablelStatus _lblStatus1 status:#wait
 		
-		n = _tbTextBox.text
+		n = "[" + _tbTextBox.text + "]"
 		
 		layer = LayerManager.getLayerFromName n
 		
@@ -492,8 +526,8 @@ rollout rPruneSettings "Options"
 		if(layer != undefined) then 
 		(
 			q = queryBox "The layer with this name already exist!\nAdd to exist layer?" title: "Warning"
-			lablelStatus _lblStatus1 status:#ok
-			if(not q) do return false
+			lablelStatus _lblStatus1 status:#cancel
+			if(not q) do return 0
 		)
 		else
 		(
@@ -536,7 +570,7 @@ rollout rPruneSettings "Options"
 		
 		lablelStatus _lblStatus2 status:#wait
 		
-		progressStart "Unlink objects..."
+		progressStart "Unlink Objects..."
 		escapeEnable
 				
 		result = 0
@@ -603,6 +637,8 @@ rollout rPruneSettings "Options"
 		return result
 	)
 	
+	global invalidObjCnt = 0
+	
 	fn deleteBadObjects o =
 	(
 		if(not _chkBox4.checked) do 
@@ -617,21 +653,29 @@ rollout rPruneSettings "Options"
 		escapeEnable
 		
 		result = 0
+		
+		badObjects = #()
 		for i in 1 to o.count  do
 		(
-			if(validObj o[i] and classOf o[i] != SplineShape and classOf o[i] != line) do
+			if(o[i] != undefined and not isDeleted o[i] and classOf o[i] != SplineShape and classOf o[i] != line) do
 			(
-				delete o[i]
+				append badObjects o[i]				
 				result += 1
 			)
-			
+						
 			progressUpdate (100.0 * i / o.count)
 			if(getProgressCancel() == true) do exit	
 		)
 		
+		if(badObjects.count > 0) do
+		(
+			invalidObjCnt += result
+			try(delete badObjects) catch(print "Can't delete invalid objects")								
+		)
+		
 		progressEnd()
 		
-		case result of
+		case invalidObjCnt of
 		(	
 			0: lablelStatus _lblStatus4 status:#notfound
 			default: lablelStatus _lblStatus4 status:#cleared	
@@ -688,8 +732,132 @@ rollout rPruneSettings "Options"
 		return result
 	)
 	
+	fn flattenDWG o = 
+	(
+		if(not _chkBox7.checked) do 
+		(
+			lablelStatus _lblStatus7 status:#disabled
+			return 0
+		)
+		
+		lablelStatus _lblStatus7 status:#wait
+		
+		sleep 0.1
+		
+		result = 0
+				
+		vMin = o.min.z
+		vMax = o.max.z
+
+		a = vMax - vMin
+	
+		if((floor  a) > 0.0) do
+		(
+			o.pivot = o.center
+			scale o [1.0, 1.0, 0.000001]
+			o.pos.z = 0.0
+			
+			result += 1
+		)
+			
+		case result of
+		(	
+			0: lablelStatus _lblStatus7 status:#notfound
+			default: lablelStatus _lblStatus7 status:#ok	
+		)
+		
+		return result
+	)
+	
+	fn renameObjects o =
+	(
+		if(not _chkBox8.checked) do 
+		(
+			lablelStatus _lblStatus8 status:#disabled
+			return 0
+		)
+		
+		lablelStatus _lblStatus8 status:#wait
+		
+		progressStart "Rename Objects..."
+		escapeEnable
+			
+		n = _tbTextBox.text
+		
+		result = 0
+		for i in 1 to o.count do
+		(
+			if(validObj o[i]) do
+			(
+				o[i].name = n + "_" + result as string
+				result += 1
+			)
+			
+			progressUpdate (100.0 * i / o.count)
+			if(getProgressCancel() == true) do exit	
+		)
+		
+		case result of
+		(	
+			0: lablelStatus _lblStatus8 status:#notfound
+			default: lablelStatus _lblStatus8 status:#ok	
+		)
+		
+		progressEnd()
+		
+		return result
+	)
+		
+	fn groupObjects o =
+	(
+		if(not _chkBox9.checked) do 
+		(
+			lablelStatus _lblStatus9 status:#disabled
+			return 0
+		)
+		
+		lablelStatus _lblStatus9 status:#wait
+		
+		progressStart "Rename Objects..."
+		escapeEnable
+			
+		n = _tbTextBox.text
+		
+		result = 0
+				
+		for i in 1 to o.count do
+		(
+			if(o[i] != undefined and isValidObj o[i] and isGroupHead o[i]) do
+			(
+				explodeGroup o[i]
+				result += 1
+			)
+			
+			progressUpdate (100.0 * i / o.count)
+			if(getProgressCancel() == true) do exit	
+		)
+		
+		--g = for i in o where validObj i collect i
+			
+		group selection name: n select: false
+		
+		result += 1
+		
+		case result of
+		(	
+			0: lablelStatus _lblStatus9 status:#notfound
+			default: lablelStatus _lblStatus9 status:#ok	
+		)
+		
+		progressEnd()
+		
+		return result
+	)
+	
 	fn pruneDWG =
-	(		
+	(	
+		freezeUi()
+		
 		n = _tbTextBox.text
 				
 		if(n.count == 0 or n == "Enter DWG Name...") do 
@@ -710,7 +878,7 @@ rollout rPruneSettings "Options"
 		-- Create groups
 		-- Remove Mesh +
 		-- Convert VIZBlock to Splines +
-		-- Attach by color
+		-- Attach by color +
 		-- Flatten 
 		-- Clear empty layers +
 		
@@ -728,8 +896,14 @@ rollout rPruneSettings "Options"
 			
 		r += convertToShape selection
 		sleep 0.1
-				
-		r += deleteBadObjects selection
+		
+		--
+		invalidObjCnt = 0
+		bad = deleteBadObjects selection		
+		r += bad
+		
+		sleep 0.1
+		while bad > 0 do bad = deleteBadObjects selection				
 		sleep 0.1
 		
 		r += deleteEmptyLayers()
@@ -738,8 +912,19 @@ rollout rPruneSettings "Options"
 		r += attachByColor selection
 		sleep 0.1
 		
-			
+		r += flattenDWG selection
+		
+		sleep 0.1
+		
+		r += renameObjects selection
+		
+		sleep 0.1
+		
+		r += groupObjects selection
+
 		disableUI true
+		
+		sleep 0.1		
 		
 		if(r > 0) then
 		(
@@ -810,6 +995,9 @@ rollout rPruneSettings "Options"
 		_chkBox4.checked = useSettings "CBX4" "bool" "r"
 		_chkBox5.checked = useSettings "CBX5" "bool" "r"
 		_chkBox6.checked = useSettings "CBX6" "bool" "r"
+		_chkBox7.checked = useSettings "CBX7" "bool" "r"
+		_chkBox8.checked = useSettings "CBX8" "bool" "r"
+		_chkBox9.checked = useSettings "CBX9" "bool" "r"
 	)
 	
 	on _chkBox1 changed x do useSettings "CBX1" x "w"
@@ -818,6 +1006,9 @@ rollout rPruneSettings "Options"
 	on _chkBox4 changed x do useSettings "CBX4" x "w"
 	on _chkBox5 changed x do useSettings "CBX5" x "w"
 	on _chkBox6 changed x do useSettings "CBX6" x "w"
+	on _chkBox7 changed x do useSettings "CBX7" x "w"
+	on _chkBox8 changed x do useSettings "CBX8" x "w"
+	on _chkBox9 changed x do useSettings "CBX9" x "w"
 		
 	on rPruneSettings close do
 	(
