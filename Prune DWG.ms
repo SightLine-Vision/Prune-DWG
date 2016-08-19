@@ -2,10 +2,10 @@
 [INFO]
 
 NAME = Prune DWG
-VERSION = 1.0.0
+VERSION = 1.0.2
 AUTHOR = MastaMan
 DEV = ViscoCG
-HELP = \help\pruneDwg.html
+HELP = https://sightline-vision.github.io/Prune-DWG/
 
 [1.0.0]
 
@@ -32,10 +32,10 @@ Features:=
 */
 
 
+
 try(closeRolloutFloater fPruneDWG)catch()
 global fPruneDWG = newRolloutFloater "Prune DWG" 250 370
-
-
+	
 fn getScriptInfo s releaseInfo: "" =
 (		
 	if(releaseInfo != "") do
@@ -177,7 +177,7 @@ rollout rPruneSettings "Options"
 		
 		button _btnStart "Start" width:210 height:32 offset: [0, 10]
 	)
-	
+		
 	timer tmrPrune "" interval: 10 active: false
 	timer tmrAttach "" interval: 300 active: false
 	timer tmrAttachNode "" interval: 100 active: false
@@ -343,10 +343,20 @@ rollout rPruneSettings "Options"
 		lbl.Text = txt
 	)
 	
-	fn initDotNet disabled: false clr: false = 
+	fn initDotNet disabled: false clr: false err: false = 
 	(	
-		_tbTextBox.BackColor = getBgColor()
-		_tbTextBox.ForeColor = getTextColor()
+		bgColor = getBgColor()
+		fgColor = getTextColor()	
+		
+		if(err) do 
+		(
+			bgColor = getColor 255 229 153
+			fgColor = getColor 215 144 0
+		)
+		
+				
+		_tbTextBox.BackColor = bgColor
+		_tbTextBox.ForeColor = fgColor
 
 		_tbTextBox.Font = getFont s: #italic
 		if(clr) do _tbTextBox.text  = "Enter DWG Name..."	
@@ -366,7 +376,7 @@ rollout rPruneSettings "Options"
 	(
 		if(x.count < 2) do return 0
 	
-		result = 0
+		global attachResult = 0
 		sleep 0.1
 		/*
 		undo off
@@ -397,32 +407,42 @@ rollout rPruneSettings "Options"
 		m = "Attach By R:" + r + " G:" +g + " B:" + b
 		progressStart m
 		escapeEnable
+				
 		
-		pause = 0
+		global attachObjs = x
 
-		disableSceneRedraw()
-		undo off
+		fn startAttach =
 		(
-			for i in x.count to 2 by -1 do
+			pause = 0
+			undo off
 			(
-				try(addAndWeld o x[i] -1) catch()
-				
-				deleteItem x i
-				
-				result += 1
-				pause += 1
-				
-				progressUpdate (100.0 * result / x.count)
-				if(getProgressCancel() == true) do exit		
-				
-				/*if(pause > 300) do 
+				for i in attachObjs.count to 2 by -1 do
 				(
-					sleep 0.1
-					pause = 0
-				)*/
+					try(addAndWeld attachObjs[1] attachObjs[i] -1) catch()
+				
+					--deleteItem attachObjs i
+				
+					attachResult += 1
+					pause += 1
+					
+					progressUpdate (100.0 * attachResult / attachObjs.count)
+					if(getProgressCancel() == true) do exit		
+					
+					/*if(pause > 300) do 
+					(
+						sleep 0.1
+						pause = 0
+					)*/
+				)
 			)
 		)
 		
+		
+		startAttach()
+		
+
+		disableSceneRedraw()
+				
 		
 		progressEnd()
 		
@@ -434,7 +454,7 @@ rollout rPruneSettings "Options"
 			
 		gc()
 		
-		return result
+		return attachResult
 	)
 	
 	
@@ -489,6 +509,8 @@ rollout rPruneSettings "Options"
 	-- CALL FIRST
 	fn initalCall o =
 	(
+		print "Initial Stage"
+		
 		objColors = #()
 		
 		n = _tbTextBox.text
@@ -576,7 +598,7 @@ rollout rPruneSettings "Options"
 		result = 0
 		for i in 1 to o.count  do
 		(
-			if(validObj o[i] and o[i].parent != undefined) do
+			if(validObj o[i] and o[i].parent != undefined and not isGroupHead o[i].parent) do
 			(
 				o[i].parent = undefined
 				o[i].transform.controller = prs()
@@ -614,7 +636,7 @@ rollout rPruneSettings "Options"
 				
 		result = 0
 		a = #()
-		for i in 1 to o.count where validObj o[i] and classOf o[i] == LinkCompositeshape and canConvertTo o[i] SplineShape do 
+		for i in 1 to o.count where validObj o[i] and classOf o[i]  != SplineShape and classOf o[i] == LinkCompositeshape and canConvertTo o[i] SplineShape do 
 		(	
 			append a o[i]
 			
@@ -839,7 +861,7 @@ rollout rPruneSettings "Options"
 		
 		--g = for i in o where validObj i collect i
 			
-		group selection name: n select: false
+		if(selection.count > 0) do group selection name: n select: false
 		
 		result += 1
 		
@@ -854,15 +876,15 @@ rollout rPruneSettings "Options"
 		return result
 	)
 	
-	fn pruneDWG =
+	fn pruneDWG=
 	(	
-		freezeUi()
+		--freezeUi()
 		
 		n = _tbTextBox.text
 				
 		if(n.count == 0 or n == "Enter DWG Name...") do 
 		(
-			initDotNet clr: false
+			initDotNet clr: false err: true
 			return messageBox "Please enter dwg name!" title: "Warning!"
 		)
 		if(selection.count == 0) do 
@@ -938,8 +960,10 @@ rollout rPruneSettings "Options"
 	
 	on _tbTextBox GotFocus do
 	(
-		t = _tbTextBox.text 
+		initDotNet()
 		
+		t = _tbTextBox.text 
+				
 		if(t.count == 0 or t == "Enter DWG Name...") do
 		(			
 			_tbTextBox.Font = getFont()
@@ -963,7 +987,7 @@ rollout rPruneSettings "Options"
 		initDotNet disabled: true
 		
 		tmrPrune.active = true
-
+		
 		/*
 		if(_chkBox1.checked) do 
 		(		
@@ -981,7 +1005,7 @@ rollout rPruneSettings "Options"
 	)
 	
 	on rPruneSettings open do
-	(
+	(	
 		initDotNet clr: true
 				
 		x = (useSettings "x" "float" "r") 
@@ -1034,8 +1058,16 @@ rollout rAbout "About"
 	(
 		s = getThisScriptFilename()
 		i = getScriptInfo s
-		szHelp = (getFilenamePath s) + i[7]
-		if(i[7] != "" and doesFileExist szHelp) do btnHelp.enabled = true
+		
+		szHelp = i[7]
+		
+		if(findString i[7] "http://" == undefined and findString i[7] "https://" == undefined) do
+		(
+			szHelp = (getFilenamePath s) + i[7]
+			if(not doesFileExist szHelp) do szHelp = ""
+		)
+		
+		if(szHelp!= "") do btnHelp.enabled = true
 			
 		if(run) do ShellLaunch szHelp ""
 	)
@@ -1057,3 +1089,9 @@ rollout rAbout "About"
 
 addRollout rPruneSettings fPruneDWG rolledUp:false 
 addRollout rAbout fPruneDWG rolledUp:true 
+
+
+
+
+
+
