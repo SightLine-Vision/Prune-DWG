@@ -171,7 +171,7 @@ rollout rPruneSettings "Options"
 		checkbox _chkBox8 "Rename:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Renames all selected dwg's."
 		dotNetControl _lblStatus8 "System.Windows.Forms.label" width:72  align: #right 
 		
-		checkbox _chkBox9 "Make Group:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Creates group for selected dwg's."
+		checkbox _chkBox9 "Make Group:"  width:125 height:18 checked:true across: 2 align: #left tooltip: "Creates group for selected dwg's.\n\nThe group will be created in \"default (0)\" layer."
 		dotNetControl _lblStatus9 "System.Windows.Forms.label" width:72  align: #right 
 		
 		
@@ -428,7 +428,7 @@ rollout rPruneSettings "Options"
 					progressUpdate (100.0 * attachResult / attachObjs.count)
 					if(getProgressCancel() == true) do exit		
 					
-					if(pause > 450) do 
+					if(pause > 350) do 
 					(						
 						pause = 0
 						exit
@@ -511,9 +511,7 @@ rollout rPruneSettings "Options"
 	
 	-- CALL FIRST
 	fn initalCall o =
-	(
-		print "Initial Stage"
-		
+	(	
 		objColors = #()
 		
 		n = _tbTextBox.text
@@ -550,9 +548,10 @@ rollout rPruneSettings "Options"
 		
 		if(layer != undefined) then 
 		(
-			q = queryBox "The layer with this name already exist!\nAdd to exist layer?" title: "Warning"
+			q = yesNoCancelBox "The layer with this name already exist!\nAdd to exist layer?" title: "Warning"
 			lablelStatus _lblStatus1 status:#cancel
-			if(not q) do return 0
+			if(q == #no) do return 0
+			if(q == #cancel) do return -1
 		)
 		else
 		(
@@ -682,7 +681,7 @@ rollout rPruneSettings "Options"
 		badObjects = #()
 		for i in 1 to o.count  do
 		(
-			if(o[i] != undefined and not isDeleted o[i] and classOf o[i] != SplineShape and classOf o[i] != line) do
+			if(o[i] != undefined and not isDeleted o[i] and classOf o[i] != SplineShape and classOf o[i] != line and not isGroupHead o[i]) do
 			(
 				append badObjects o[i]				
 				result += 1
@@ -913,7 +912,14 @@ rollout rPruneSettings "Options"
 		-- Create single layer
 		r = 0
 		
-		r += moveToLayer selection
+		l = moveToLayer selection
+		if(l == -1) then 
+		(
+			initDotNet()
+			disableUI true
+			return MessageBox "Canelled..." title:"Cancel" beep: false
+		)
+		r += l
 		sleep 0.1
 		
 		r += unlinkObjects selection
