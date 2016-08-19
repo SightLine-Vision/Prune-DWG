@@ -2,7 +2,7 @@
 [INFO]
 
 NAME = Prune DWG
-VERSION = 1.0.2
+VERSION = 1.0.3
 AUTHOR = MastaMan
 DEV = ViscoCG
 HELP = https://sightline-vision.github.io/Prune-DWG/
@@ -428,11 +428,11 @@ rollout rPruneSettings "Options"
 					progressUpdate (100.0 * attachResult / attachObjs.count)
 					if(getProgressCancel() == true) do exit		
 					
-					/*if(pause > 300) do 
-					(
-						sleep 0.1
+					if(pause > 450) do 
+					(						
 						pause = 0
-					)*/
+						exit
+					)
 				)
 			)
 		)
@@ -457,6 +457,7 @@ rollout rPruneSettings "Options"
 		return attachResult
 	)
 	
+	global attObjCnt = 0
 	
 	fn attachByColor o =
 	(
@@ -490,6 +491,8 @@ rollout rPruneSettings "Options"
 			result += AttachObj objByColors[i]	objColors[i]
 		)
 		
+		attObjCnt += result
+		
 		enableSceneRedraw()		
 		enableSceneRedraw()		
 		enableSceneRedraw()		
@@ -497,7 +500,7 @@ rollout rPruneSettings "Options"
 		enableSceneRedraw()		
 		forceCompleteRedraw()
 						
-		case result of
+		case attObjCnt of
 		(	
 			0: lablelStatus _lblStatus6 status:#notfound
 			default: lablelStatus _lblStatus6 status:#ok	
@@ -878,7 +881,7 @@ rollout rPruneSettings "Options"
 	
 	fn pruneDWG=
 	(	
-		--freezeUi()
+		freezeUi()
 		
 		n = _tbTextBox.text
 				
@@ -931,8 +934,13 @@ rollout rPruneSettings "Options"
 		r += deleteEmptyLayers()
 		sleep 0.1
 		
-		r += attachByColor selection
+		attObjCnt = 0		
+		att = attachByColor selection
+		r += att
+		
 		sleep 0.1
+		while att > 0 do att = attachByColor selection
+		sleep 0.1		
 		
 		r += flattenDWG selection
 		
